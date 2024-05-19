@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 import gpytorch
@@ -18,9 +17,9 @@ train_x2 = torch.linspace(0, 1, 20)
 train_y2 = 0.5*((6*train_x2 - 2)**2)*torch.sin(12*train_x2 - 4) + 10*(train_x2) - 5 + torch.randn(train_x2.size()) * math.sqrt(0.1)
 
 # We will use the simplest form of GP model, exact inference
-class ExactGPModel(gpytorch.models.ExactGP):
+class GP(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood, mean=gpytorch.means.ZeroMean(),kernel=gpytorch.kernels.MaternKernel(nu=2.5)):
-        super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
+        super(GP, self).__init__(train_x, train_y, likelihood)
         self.mean_module = mean
         self.covar_module = gpytorch.kernels.ScaleKernel(kernel)
 
@@ -75,7 +74,7 @@ class MFGP(nn.Module):
         likelihood1 = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=noises_1, learn_additional_noise=False)
         likelihood2 = gpytorch.likelihoods.GaussianLikelihood()
         
-        self.GP2 = ExactGPModel(x2, y2, likelihood2)
+        self.GP2 = GP(x2, y2, likelihood2)
 
         self.GP2.train()
         self.GP2.likelihood.train()
@@ -91,7 +90,7 @@ class MFGP(nn.Module):
 
         self.rho = torch.tensor(LinearRegression().fit(pred2.reshape((-1, 1)),train_y1.detach().numpy()).coef_)
 
-        self.GPd = ExactGPModel(x1, y1 - self.rho*pred2, likelihood1)
+        self.GPd = GP(x1, y1 - self.rho*pred2, likelihood1)
 
         self.GPd.train()
         self.GPd.likelihood.train()
@@ -121,7 +120,7 @@ MFmodel = MFGP(train_x1,train_y1,train_x2,train_y2)
 with torch.no_grad():
     test_x = torch.linspace(0, 1, 51)
     test_noises = torch.ones(51) * 0.001
-    observed_pred2 = MFmodel.GP2.likelihood(MFmodel.GP2(test_x)) #, noise=test_noises
+    observed_pred2 = MFmodel.GP2.likelihood(MFmodel.GP2(test_x))
     mean_mf, var_mf = MFmodel(test_x)
 
 with torch.no_grad():
