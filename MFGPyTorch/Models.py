@@ -14,7 +14,7 @@ noises_1 = torch.ones(4) * 0.001
 
 train_x2 = torch.linspace(0, 1, 20)
 # True function is sin(2*pi*x) with Gaussian noise
-train_y2 = 0.5*((6*train_x2 - 2)**2)*torch.sin(12*train_x2 - 4) + 10*(train_x2) - 5 + torch.randn(train_x2.size()) * math.sqrt(0.1)
+train_y2 = 0.5*((6*train_x2 - 2)**2)*torch.sin(12*train_x2 - 4) + 10*(train_x2) - 5 + torch.randn(train_x2.size()) * torch.sqrt(torch.tensor(0.1))
 
 # We will use the simplest form of GP model, exact inference
 class GP(gpytorch.models.ExactGP):
@@ -28,7 +28,7 @@ class GP(gpytorch.models.ExactGP):
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
     
-    def condition(self,trainx,trainy,training_iter = 1000,lr=0.1):
+    def condition(self,trainx,trainy,training_iter = 500,lr=0.1):
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         
@@ -65,6 +65,32 @@ class GP(gpytorch.models.ExactGP):
 
         for param in self.likelihood.parameters():
             param.requires_grad = True
+    
+
+def maxvar(model):
+        
+        xx = torch.tensor([0.5],dtype=torch.float32,requires_grad=True)
+
+        optimizer = torch.optim.Adam([xx], lr=0.2)
+
+        for i in range(100):
+            
+            optimizer.zero_grad()
+
+            v = -1*model(xx)[1]
+
+            v.backward()
+
+            print('Iter %d/%d - loc: %.3f - Loss: %.3f ' % ( # lengthscale: %.3f  noise: %.3f' % (
+                i + 1, 100, xx.item(), -1*v.item(),
+                #self.covar_module.base_kernel.lengthscale.item(),
+                #self.likelihood.noise.item()
+            ))
+
+            optimizer.step()
+        
+        return xx, -1*v
+
 
 class MFGP(nn.Module):
     def __init__(self, x1, y1, x2, y2):
@@ -143,3 +169,8 @@ with torch.no_grad():
 
     ax.legend(['Observed HF Data', 'MF Mean', 'MF Confidence', 'Observed LF Data', 'LF Mean', 'LF Confidence'])
     plt.show()
+
+x,v = maxvar(MFmodel)
+
+print(x)
+print(v)
