@@ -6,21 +6,27 @@ from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
 
 # Training data is 100 points in [0,1] inclusive regularly spaced
-train_x1 = torch.linspace(0, 1, 5)
+train_x1 = torch.cat((torch.tensor([0],dtype=torch.float32),torch.rand(3),torch.tensor([1],dtype=torch.float32)))
+train_x2 = torch.cat((train_x1,torch.rand(3)))
+train_x3 = torch.cat((train_x2,torch.rand(3)))
+train_x4 = torch.cat((train_x3,torch.rand(3)))
 # True function is sin(2*pi*x) with Gaussian noise
 train_y1 = ((6*train_x1 - 2)**2)*torch.sin(12*train_x1 - 4)
-
-train_x2 = torch.linspace(0, 1, 20)
-# True function is sin(2*pi*x) with Gaussian noise
-train_y2 = 0.5*((6*train_x2 - 2)**2)*torch.sin(12*train_x2 - 4) + 10*(train_x2) - 5 # + torch.randn(train_x2.size()) * torch.sqrt(torch.tensor(0.1))
+train_y2 = 0.5*((6*train_x2 - 2)**2)*torch.sin(12*train_x2 - 4) + 10*(train_x2) - 5 #+ torch.randn(train_x2.size()) * torch.sqrt(torch.tensor(0.1))
+train_y3 = 0.75*(((6*train_x3 - 2)**2)*torch.sin(12*train_x3 - 4)) + 5*(train_x3 - 0.5) - 2
+train_y4 = 0.5*(((6*train_x4 - 2)**2)*torch.sin(12*train_x4 - 4)) + 10*(train_x4 - 0.5) - 5
 
 Xt = []
 Xt.append(train_x1)
 Xt.append(train_x2)
+Xt.append(train_x3)
+Xt.append(train_x4)
 
 Yt = []
 Yt.append(train_y1)
 Yt.append(train_y2)
+Yt.append(train_y3)
+Yt.append(train_y4)
 
 # We will use the simplest form of GP model, exact inference
 class GP(gpytorch.models.ExactGP):
@@ -106,7 +112,7 @@ class MFGP(nn.Module):
         self.GPs = [None] * self.nF
 
         for i in range(len(X)):
-            self.GPs[i] = GP(X[i], Y[i], gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=torch.ones_like(Y[i])*0.001, learn_additional_noise=False))#gpytorch.likelihoods.GaussianLikelihood())
+            self.GPs[i] = GP(X[i], Y[i], gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=torch.ones_like(Y[i])*0, learn_additional_noise=False))#gpytorch.likelihoods.GaussianLikelihood())
 
             self.GPs[i].train()
             self.GPs[i].likelihood.train()
@@ -125,10 +131,10 @@ class MFGP(nn.Module):
 
             pred = self.GPs[i+1](X[i]).mean.detach().numpy()
 
-            self.rho[i+1] = torch.tensor(LinearRegression().fit(pred.reshape((-1, 1)),train_y1.detach().numpy()).coef_)
+            self.rho[i+1] = torch.tensor(LinearRegression().fit(pred.reshape((-1, 1)),Y[i].detach().numpy()).coef_)
 
             #if i==1:
-            self.GPd[i] = GP(X[i], Y[i] - self.rho[i+1]*pred, gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=torch.ones_like(Y[i])*0.001, learn_additional_noise=False))
+            self.GPd[i] = GP(X[i], Y[i] - self.rho[i+1]*pred, gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=torch.ones_like(Y[i])*0, learn_additional_noise=False))
             #else:
            #     self.GPd[i] = GP(X[i], Y[i] - self.rho[i+1]*pred, gpytorch.likelihoods.GaussianLikelihood())
 
@@ -167,29 +173,28 @@ MFmodel = MFGP(Xt, Yt)
 # Make predictions by feeding model through likelihood
 with torch.no_grad():
     test_x = torch.linspace(0, 1, 51)
-    test_noises = torch.ones(51) * 0.001
     observed_pred2 = MFmodel.GPs[-1].likelihood(MFmodel.GPs[-1](test_x))
     mean_mf, var_mf = MFmodel(test_x)
 
 with torch.no_grad():
     # Initialize plot
-    f, ax = plt.subplots(1, 1, figsize=(4, 3))
+    f, ax1 = plt.subplots(1, 1, figsize=(4, 3))
 
     # Get upper and lower confidence bounds
     lower2, upper2 = observed_pred2.confidence_region()
 
     # Plot training data as black stars
-    ax.plot(train_x1.numpy(), train_y1.numpy(), 'k*')
+    ax1.plot(train_x1.numpy(), train_y1.numpy(), 'k*')
     # Plot predictive means as blue line
-    ax.plot(test_x.numpy(), mean_mf.numpy(), 'b')
+    ax1.plot(test_x.numpy(), mean_mf.numpy(), 'b')
     # Shade between the lower and upper confidence bounds
-    ax.fill_between(test_x.numpy(), mean_mf.numpy() - 2*torch.sqrt(var_mf).numpy(), mean_mf.numpy() + 2*torch.sqrt(var_mf).numpy(), alpha=0.5)
+    ax1.fill_between(test_x.numpy(), mean_mf.numpy() - 2*torch.sqrt(var_mf).numpy(), mean_mf.numpy() + 2*torch.sqrt(var_mf).numpy(), alpha=0.5)
 
-    ax.plot(train_x2.numpy(), train_y2.numpy(), 'y*')
-    ax.plot(test_x.numpy(), observed_pred2.mean.numpy(), 'g')
-    ax.fill_between(test_x.numpy(), lower2.numpy(), upper2.numpy(), alpha=0.5)
+    ax1.plot(Xt[-1].numpy(), Yt[-1].numpy(), 'y*')
+    ax1.plot(test_x.numpy(), observed_pred2.mean.numpy(), 'g')
+    ax1.fill_between(test_x.numpy(), lower2.numpy(), upper2.numpy(), alpha=0.5)
 
-    ax.legend(['Observed HF Data', 'MF Mean', 'MF Confidence', 'Observed LF Data', 'LF Mean', 'LF Confidence'])
+    ax1.legend(['Observed HF Data', 'MF Mean', 'MF Confidence', 'Observed LF Data', 'LF Mean', 'LF Confidence'])
     plt.show()
 
 x,v = maxvar(MFmodel)
